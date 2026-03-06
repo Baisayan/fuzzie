@@ -126,42 +126,42 @@ export async function getMonthlyActivity() {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    // const [reviews, { data: prs }] = await Promise.all([
-    //   prisma.review.findMany({
-    //     where: {
-    //       repository: {
-    //         userId: session.user.id,
-    //       },
-    //       createdAt: {
-    //         gte: sixMonthsAgo,
-    //       },
-    //     },
-    //     select: {
-    //       createdAt: true,
-    //     },
-    //   }),
-    //   octokit.rest.search.issuesAndPullRequests({
-    //     q: `author:${user.login} type:pr created:>${
-    //       sixMonthsAgo.toISOString().split("T")[0]
-    //     }`,
-    //     per_page: 100,
-    //   }),
-    // ]);
+    const [reviews, { data: prs }] = await Promise.all([
+      prisma.review.findMany({
+        where: {
+          repository: {
+            userId: session.user.id,
+          },
+          createdAt: {
+            gte: sixMonthsAgo,
+          },
+        },
+        select: {
+          createdAt: true,
+        },
+      }),
+      octokit.rest.search.issuesAndPullRequests({
+        q: `author:${user.login} type:pr created:>${
+          sixMonthsAgo.toISOString().split("T")[0]
+        }`,
+        per_page: 100,
+      }),
+    ]);
 
-    // reviews.forEach((review) => {
-    //   const monthKey = monthNames[review.createdAt.getMonth()];
-    //   if (monthlyData[monthKey]) {
-    //     monthlyData[monthKey].reviews += 1;
-    //   }
-    // });
+    reviews.forEach((review) => {
+      const monthKey = monthNames[review.createdAt.getMonth()];
+      if (monthlyData[monthKey]) {
+        monthlyData[monthKey].reviews += 1;
+      }
+    });
 
-    // prs.items.forEach((pr: any) => {
-    //   const date = new Date(pr.created_at);
-    //   const monthKey = monthNames[date.getMonth()];
-    //   if (monthlyData[monthKey]) {
-    //     monthlyData[monthKey].prs += 1;
-    //   }
-    // });
+    prs.items.forEach((pr: any) => {
+      const date = new Date(pr.created_at);
+      const monthKey = monthNames[date.getMonth()];
+      if (monthlyData[monthKey]) {
+        monthlyData[monthKey].prs += 1;
+      }
+    });
 
     return Object.keys(monthlyData).map((name) => ({
       name,

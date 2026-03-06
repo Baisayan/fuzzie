@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { getRepositories } from "@/module/github";
+import { createWebhook, getRepositories } from "@/module/github";
 import { headers } from "next/headers";
 
 export const fetchRepositories = async (
@@ -31,4 +31,35 @@ export const fetchRepositories = async (
     ...repo,
     isConnected: connectedRepoIds.has(BigInt(repo.id)),
   }));
+};
+
+export const connectRepository = async (
+  owner: string,
+  repo: string,
+  githubId: number,
+) => {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  const webhook = await createWebhook(owner, repo);
+
+  if (webhook) {
+    await prisma.repository.create({
+      data: {
+        githubId: BigInt(githubId),
+        name: repo,
+        owner,
+        fullName: `${owner}/${repo}`,
+        url: `https://github.com/${owner}/${repo}`,
+        userId: session.user.id,
+      },
+    });
+  }
+
+  return webhook;
 };
