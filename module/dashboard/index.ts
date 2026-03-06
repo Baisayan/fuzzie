@@ -179,7 +179,7 @@ export async function getContributionStats() {
       headers: await headers(),
     });
 
-    if (!session) {
+    if (!session?.user) {
       throw new Error("Unauthorized");
     }
 

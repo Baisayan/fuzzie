@@ -56,7 +56,7 @@ const DashboardPage = () => {
             <CardTitle className="text-sm font-medium">
               Total Repositories
             </CardTitle>
-            <GitBranch className="h-4 w-4 text-muted-foreground" />
+            <GitBranch className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -71,7 +71,7 @@ const DashboardPage = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Commits</CardTitle>
-            <GitCommit className="h-4 w-4 text-muted-foreground" />
+            <GitCommit className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -84,7 +84,7 @@ const DashboardPage = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pull Requests</CardTitle>
-            <GitPullRequest className="h-4 w-4 text-muted-foreground" />
+            <GitPullRequest className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -97,7 +97,7 @@ const DashboardPage = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">AI Reviews</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            <MessageSquare className="size-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
