@@ -119,7 +119,7 @@ export const deleteWebhook = async (owner: string, repo: string) => {
     });
 
     const hookToDelete = hooks.find((hook) => hook.config.url === webhookUrl);
-    
+
     if (hookToDelete) {
       await octokit.rest.repos.deleteWebhook({
         owner,

@@ -1,7 +1,7 @@
 "use client";
 
 import { ProfileForm } from "@/module/settings/profile-form";
-// import { RepositoryList } from "@/module/settings/repo-list";
+import { RepositoryList } from "@/module/settings/repo-list";
 
 const SettingsPageClient = () => {
   return (
@@ -13,7 +13,7 @@ const SettingsPageClient = () => {
         </p>
       </div>
       <ProfileForm /> 
-      {/* <RepositoryList />  */}
+      <RepositoryList /> 
     </div>
   );
 };
