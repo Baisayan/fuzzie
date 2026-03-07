@@ -83,9 +83,7 @@ const RepositoryPageClient = () => {
         repo: repo.name,
         githubId: repo.id,
       },
-      {
-        onSettled: () => setLocalConnectingId(null),
-      },
+      { onSettled: () => setLocalConnectingId(null) },
     );
   };
 
