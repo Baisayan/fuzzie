@@ -1,6 +1,6 @@
 "use client";
 
-// import { ProfileForm } from "@/module/settings/profile-form";
+import { ProfileForm } from "@/module/settings/profile-form";
 // import { RepositoryList } from "@/module/settings/repo-list";
 
 const SettingsPageClient = () => {
@@ -12,9 +12,7 @@ const SettingsPageClient = () => {
           Manage your account settings and connected repositories.
         </p>
       </div>
-
-      {/* <ProfileForm />  */}
-
+      <ProfileForm /> 
       {/* <RepositoryList />  */}
     </div>
   );
