@@ -142,12 +142,7 @@ export async function getRepoFileContents(
   owner: string,
   repo: string,
   path: string = "",
-): Promise<
-  {
-    path: string;
-    content: string;
-  }[]
-> {
+): Promise<{ path: string; content: string }[]> {
   const octokit = new Octokit({ auth: token });
   const { data } = await octokit.rest.repos.getContent({
     owner,
@@ -155,7 +150,6 @@ export async function getRepoFileContents(
     path,
   });
 
-  // checks if its a file or not
   if (!Array.isArray(data)) {
     if (data.type === "file" && data.content) {
       return [
