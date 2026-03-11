@@ -30,7 +30,6 @@ const LoginUI = () => {
             </div>
           </div>
 
-          {/* Main Content */}
           <h1 className="text-5xl font-bold mb-6 leading-tight text-balance">
             Cut Code Review Time & Bugs in Half{" "}
             <span className="block">Instantly.</span>
@@ -53,7 +52,6 @@ const LoginUI = () => {
             </p>
           </div>
 
-          {/* Github Login Button */}
           <Button
             onClick={handleGithubLogin}
             disabled={isLoading}
