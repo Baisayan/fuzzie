@@ -9,7 +9,7 @@ import {
   GitGraph,
   GithubIcon,
   ShieldAlert,
-  Terminal,
+  Code,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -32,7 +32,7 @@ const LoginUI = () => {
         <div className="flex flex-col items-center mb-8">
           <div className="flex items-center gap-2 mb-4">
             <div className="size-8 bg-white rounded-lg flex items-center justify-center">
-              <Terminal className="text-black size-6" />
+              <Code className="text-black size-6" />
             </div>
             <span className="text-2xl font-bold tracking-tighter">
               CodeNakama
