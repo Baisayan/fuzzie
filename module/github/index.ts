@@ -2,29 +2,23 @@ import { Octokit } from "octokit";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
+import { cache } from "react";
 
-export const getGithubToken = async () => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session) {
-    throw new Error("Unauthorized");
-  }
+export const getAuthenticatedUser = cache(async () => {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) throw new Error("Unauthorized");
 
   const account = await prisma.account.findFirst({
-    where: {
-      userId: session.user.id,
-      providerId: "github",
-    },
+    where: { userId: session.user.id, providerId: "github" },
   });
 
-  if (!account?.accessToken) {
-    throw new Error("No GitHub access token found");
-  }
+  if (!account?.accessToken) throw new Error("No GitHub token");
 
-  return account.accessToken;
-};
+  const octokit = new Octokit({ auth: account.accessToken });
+  const { data: user } = await octokit.rest.users.getAuthenticated();
+
+  return { session, token: account.accessToken, username: user.login, octokit };
+});
 
 export async function fetchUserContribution(token: string, username: string) {
   const octokit = new Octokit({ auth: token });
