@@ -10,66 +10,30 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
-import { getUserProfile, updateUserProfile } from "./";
+import { updateUserProfile, getSettingsPageData } from "./";
 
-export function ProfileForm() {
-  const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+type User = NonNullable<
+  Awaited<ReturnType<typeof getSettingsPageData>>["user"]
+>;
 
-  const { data: profile, isLoading } = useQuery({
-    queryKey: ["user-profile"],
-    queryFn: async () => await getUserProfile(),
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
+export function ProfileForm({ initialUser }: { initialUser: User }) {
+  const [formData, setFormData] = useState({
+    name: initialUser?.name || "",
+    email: initialUser?.email || "",
   });
 
-  useEffect(() => {
-    if (profile) {
-      setName(profile.name || "");
-      setEmail(profile.email || "");
-    }
-  }, [profile]);
-
   const updateMutation = useMutation({
-    mutationFn: async (data: { name: string; email: string }) => {
-      return await updateUserProfile(data);
-    },
-    onSuccess: (result) => {
-      if (result?.success) {
-        queryClient.invalidateQueries({ queryKey: ["user-profile"] });
-        toast.success("Profile updated successfully");
-      }
+    mutationFn: updateUserProfile,
+    onSuccess: (res) => {
+      if (res.success) toast.success("Profile updated.");
     },
     onError: () => {
       toast.error("Failed to update profile");
     },
   });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateMutation.mutate({ name, email });
-  };
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile Settings</CardTitle>
-          <CardDescription>Update your profile information</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="animate-pulse space-y-4">
-            <div className="h-10 bg-muted rounded" />
-            <div className="h-10 bg-muted rounded" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card>
@@ -79,14 +43,22 @@ export function ProfileForm() {
       </CardHeader>
 
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            updateMutation.mutate(formData);
+          }}
+          className="space-y-6"
+        >
           <div className="space-y-2">
             <Label htmlFor="name">Full Name</Label>
             <Input
               id="name"
               placeholder="Enter your full name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
               disabled={updateMutation.isPending}
             />
           </div>
@@ -96,14 +68,16 @@ export function ProfileForm() {
               id="email"
               type="email"
               placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={formData.email}
+              onChange={(e) =>
+                setFormData({ ...formData, email: e.target.value })
+              }
               disabled={updateMutation.isPending}
             />
           </div>
 
           <Button type="submit" disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? "Saving..." : "Save Changes"}
+            {updateMutation.isPending ? "Saving..." : "Update Profile"}
           </Button>
         </form>
       </CardContent>
