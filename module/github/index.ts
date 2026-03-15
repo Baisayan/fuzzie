@@ -190,48 +190,42 @@ export async function getRepoFileContents(
 }
 
 export async function getPullRequestDiff(
-  token: string,
   owner: string,
   repo: string,
   prNumber: number,
 ) {
-  const octokit = new Octokit({ auth: token });
+  const { octokit } = await getAuthenticatedUser();
 
-  const { data: pr } = await octokit.rest.pulls.get({
-    owner,
-    repo,
-    pull_number: prNumber,
-  });
-
-  const { data: diff } = await octokit.rest.pulls.get({
-    owner,
-    repo,
-    pull_number: prNumber,
-    mediaType: {
-      format: "diff",
-    },
-  });
+  const [prResponse, diffResponse] = await Promise.all([
+    octokit.rest.pulls.get({ owner, repo, pull_number: prNumber }),
+    octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: prNumber,
+      mediaType: { format: "diff" },
+    }),
+  ]);
 
   return {
-    diff: diff as unknown as string,
-    title: pr.title,
-    description: pr.body,
+    diff: diffResponse.data as unknown as string,
+    title: prResponse.data.title,
+    description: prResponse.data.body,
   };
 }
 
 export async function postReviewComment(
-  token: string,
   owner: string,
   repo: string,
   prNumber: number,
   review: string,
 ) {
-  const octokit = new Octokit({ auth: token });
+  const { octokit } = await getAuthenticatedUser();
 
-  await octokit.rest.issues.createComment({
+  await octokit.rest.pulls.createReview({
     owner,
     repo,
-    issue_number: prNumber,
-    body: `## AI Code Review\n\n${review}\n\n---\n*Powered By CodeNakama*`,
+    pull_number: prNumber,
+    body: `## CodeNakama Review\n\n${review}`,
+    event: "COMMENT",
   });
 }
