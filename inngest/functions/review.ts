@@ -8,37 +8,37 @@ import { google } from "@ai-sdk/google";
 export const generateReview = inngest.createFunction(
   { id: "generate-review", concurrency: 5 },
   { event: "pr.review.requested" },
-
   async ({ event, step }) => {
     const { owner, repo, prNumber, userId } = event.data;
 
-    // gets pr diff, title, description
-    const { diff, title, description, token } = await step.run(
-      "fetch-pr-data",
-      async () => {
-        const account = await prisma.account.findFirst({
-          where: {
-            userId: userId,
-            providerId: "github",
-          },
-        });
+    // get metadata like token and repoId
+    const metadata = await step.run("fetch-metadata", async () => {
+      const [repository, account] = await Promise.all([
+        prisma.repository.findFirst({
+          where: { owner, name: repo, userId },
+        }),
+        prisma.account.findFirst({
+          where: { userId: userId, providerId: "github" },
+        }),
+      ]);
 
-        if (!account?.accessToken) {
-          throw new Error("No GitHub access token found");
-        }
+      if (!repository) throw new Error("Repository not found");
+      if (!account?.accessToken) throw new Error("GitHub token not found");
 
-        const data = await getPullRequestDiff(owner, repo, prNumber);
+      return {
+        repoId: repository.id,
+        token: account.accessToken,
+      };
+    });
 
-        return {
-          ...data,
-          token: account.accessToken,
-        };
-      },
-    );
+    // 2. fetch PR Data
+    const prData = await step.run("fetch-pr-data", async () => {
+      return await getPullRequestDiff(metadata.token, owner, repo, prNumber);
+    });
 
     // get codebase context relevant to pr diff
     const context = await step.run("retrieve-context", async () => {
-      const query = `${title}\n${description}`;
+      const query = `${prData.title}\n${prData.description}`;
       return await retrieveContext(query, `${owner}/${repo}`);
     });
 
@@ -46,15 +46,15 @@ export const generateReview = inngest.createFunction(
     const review = await step.run("generate-ai-review", async () => {
       const prompt = `You are an expert code reviewer. Analyze the following pull request and provide a detailed, constructive code review.
 
-PR Title: ${title}
-PR Description: ${description || "No description provided"}
+PR Title: ${prData.title}
+PR Description: ${prData.description || "No description provided"}
 
 Context from Codebase:
 ${context.join("\n\n")}
 
 Code Changes:
 \`\`\`diff
-${diff}
+${prData.diff}
 \`\`\`
 
 Please provide:
@@ -83,32 +83,21 @@ Format your response in markdown.`;
       return text;
     });
 
-    // posts review as comment on pr in github
-    await step.run("post-comment", async () => {
-      await postReviewComment(owner, repo, prNumber, review);
-    });
-
-    // saves review in db
-    await step.run("save-review", async () => {
-      const repository = await prisma.repository.findFirst({
-        where: {
-          owner,
-          name: repo,
-        },
-      });
-
-      if (repository) {
-        await prisma.review.create({
+    // post review as a comment on PR and save to db
+    await step.run("finalize-review", async () => {
+      await Promise.all([
+        postReviewComment(metadata.token, owner, repo, prNumber, review),
+        prisma.review.create({
           data: {
-            repositoryId: repository.id,
+            repositoryId: metadata.repoId,
             prNumber,
-            prTitle: title,
+            prTitle: prData.title,
             prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
-            review,
+            review: review,
             status: "completed",
           },
-        });
-      }
+        }),
+      ]);
     });
 
     return { success: true };

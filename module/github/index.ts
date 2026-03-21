@@ -219,12 +219,13 @@ export async function getPullRequestDiff(
 }
 
 export async function postReviewComment(
+  token: string,
   owner: string,
   repo: string,
   prNumber: number,
   review: string,
 ) {
-  const { octokit } = await getAuthenticatedUser();
+  const octokit = new Octokit({ auth: token });
 
   await octokit.rest.pulls.createReview({
     owner,
