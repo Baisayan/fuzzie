@@ -2,29 +2,23 @@ import { Octokit } from "octokit";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
+import { cache } from "react";
 
-export const getGithubToken = async () => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session) {
-    throw new Error("Unauthorized");
-  }
+export const getAuthenticatedUser = cache(async () => {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) throw new Error("Unauthorized");
 
   const account = await prisma.account.findFirst({
-    where: {
-      userId: session.user.id,
-      providerId: "github",
-    },
+    where: { userId: session.user.id, providerId: "github" },
   });
 
-  if (!account?.accessToken) {
-    throw new Error("No GitHub access token found");
-  }
+  if (!account?.accessToken) throw new Error("No GitHub token");
 
-  return account.accessToken;
-};
+  const octokit = new Octokit({ auth: account.accessToken });
+  const { data: user } = await octokit.rest.users.getAuthenticated();
+
+  return { session, token: account.accessToken, username: user.login, octokit };
+});
 
 export async function fetchUserContribution(token: string, username: string) {
   const octokit = new Octokit({ auth: token });
@@ -64,8 +58,7 @@ export const getRepositories = async (
   page: number = 1,
   perPage: number = 10,
 ) => {
-  const token = await getGithubToken();
-  const octokit = new Octokit({ auth: token });
+  const { octokit } = await getAuthenticatedUser();
 
   const { data } = await octokit.rest.repos.listForAuthenticatedUser({
     sort: "updated",
@@ -79,38 +72,40 @@ export const getRepositories = async (
 };
 
 export const createWebhook = async (owner: string, repo: string) => {
-  const token = await getGithubToken();
-  const octokit = new Octokit({ auth: token });
-
+  const { octokit } = await getAuthenticatedUser();
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_BASE_URL}/api/webhooks/github`;
 
-  const { data: hooks } = await octokit.rest.repos.listWebhooks({
-    owner,
-    repo,
-  });
+  try {
+    const { data: hooks } = await octokit.rest.repos.listWebhooks({
+      owner,
+      repo,
+    });
 
-  const existingWebhook = hooks.find((hook) => hook.config.url === webhookUrl);
-  if (existingWebhook) {
-    return existingWebhook;
+    const existingWebhook = hooks.find(
+      (hook) => hook.config.url === webhookUrl,
+    );
+    if (existingWebhook) return existingWebhook;
+
+    const { data } = await octokit.rest.repos.createWebhook({
+      owner,
+      repo,
+      config: {
+        url: webhookUrl,
+        content_type: "json",
+      },
+      events: ["pull_request"],
+    });
+
+    return data;
+  } catch (error) {
+    console.error("Error creating webhook:", error);
+    throw new Error("Webhook creation failed");
   }
-
-  const { data } = await octokit.rest.repos.createWebhook({
-    owner,
-    repo,
-    config: {
-      url: webhookUrl,
-      content_type: "json",
-    },
-    events: ["pull_request"],
-  });
-
-  return data;
 };
 
 export const deleteWebhook = async (owner: string, repo: string) => {
-  const token = await getGithubToken();
-  const octokit = new Octokit({ auth: token });
-  const webhookUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/api/webhooks/github`;
+  const { octokit } = await getAuthenticatedUser();
+  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_BASE_URL}/api/webhooks/github`;
 
   try {
     const { data: hooks } = await octokit.rest.repos.listWebhooks({
@@ -120,20 +115,21 @@ export const deleteWebhook = async (owner: string, repo: string) => {
 
     const hookToDelete = hooks.find((hook) => hook.config.url === webhookUrl);
 
-    if (hookToDelete) {
-      await octokit.rest.repos.deleteWebhook({
-        owner,
-        repo,
-        hook_id: hookToDelete.id,
-      });
-
-      return true;
+    if (!hookToDelete) {
+      console.warn(`No webhook found matching ${webhookUrl}`);
+      return { success: false, reason: "NOT_FOUND" };
     }
 
-    return false;
+    await octokit.rest.repos.deleteWebhook({
+      owner,
+      repo,
+      hook_id: hookToDelete.id,
+    });
+
+    return { success: true };
   } catch (error) {
     console.error("Error deleting webhook:", error);
-    return false;
+    throw new Error("Failed to delete webhook");
   }
 };
 
@@ -141,56 +137,60 @@ export async function getRepoFileContents(
   token: string,
   owner: string,
   repo: string,
-  path: string = "",
+  branch: string = "main",
 ): Promise<{ path: string; content: string }[]> {
   const octokit = new Octokit({ auth: token });
-  const { data } = await octokit.rest.repos.getContent({
-    owner,
-    repo,
-    path,
-  });
 
-  if (!Array.isArray(data)) {
-    if (data.type === "file" && data.content) {
-      return [
-        {
-          path: data.path,
-          content: Buffer.from(data.content, "base64").toString("utf-8"),
-        },
-      ];
-    }
-    return [];
-  }
+  try {
+    const { data: treeData } = await octokit.rest.git.getTree({
+      owner,
+      repo,
+      tree_sha: branch,
+      recursive: "true",
+    });
 
-  let files: { path: string; content: string }[] = [];
+    const files = treeData.tree.filter(
+      (item) =>
+        item.type === "blob" &&
+        !item.path?.match(
+          /\.(png|jpg|jpeg|gif|svg|ico|pdf|zip|tar|gz|lock|map|exe|dll|pyc)$/i,
+        ),
+    );
 
-  for (const item of data) {
-    if (item.type === "file") {
-      const { data: fileData } = await octokit.rest.repos.getContent({
-        owner,
-        repo,
-        path: item.path,
-      });
+    if (!files || files.length === 0) throw new Error("No files found in repo");
+    if (files.length > 300) throw new Error("Repo too large for indexing");
 
-      if (
-        !Array.isArray(fileData) &&
-        fileData.type === "file" &&
-        fileData.content
-      ) {
-        if (!item.path.match(/\.(png|jpg|jpeg|gif|svg|ico|pdf|zip|tar|gz)$/i)) {
-          files.push({
-            path: item.path,
-            content: Buffer.from(fileData.content, "base64").toString("utf-8"),
+    const results: { path: string; content: string }[] = [];
+    const CHUNK_SIZE = 20;
+
+    for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+      const chunk = files.slice(i, i + CHUNK_SIZE);
+
+      const chunkResults = await Promise.all(
+        chunk.map(async (file) => {
+          const { data: blob } = await octokit.rest.git.getBlob({
+            owner,
+            repo,
+            file_sha: file.sha!,
           });
-        }
-      }
-    } else if (item.type === "dir") {
-      const subFiles = await getRepoFileContents(token, owner, repo, item.path);
-      files = files.concat(subFiles);
-    }
-  }
 
-  return files;
+          return {
+            path: file.path!,
+            content: Buffer.from(blob.content, "base64").toString("utf-8"),
+          };
+        }),
+      );
+
+      results.push(...chunkResults);
+    }
+
+    return results;
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error(
+      "An unexpected error occurred while fetching repo contents",
+    );
+  }
 }
 
 export async function getPullRequestDiff(
@@ -201,25 +201,20 @@ export async function getPullRequestDiff(
 ) {
   const octokit = new Octokit({ auth: token });
 
-  const { data: pr } = await octokit.rest.pulls.get({
-    owner,
-    repo,
-    pull_number: prNumber,
-  });
-
-  const { data: diff } = await octokit.rest.pulls.get({
-    owner,
-    repo,
-    pull_number: prNumber,
-    mediaType: {
-      format: "diff",
-    },
-  });
+  const [prResponse, diffResponse] = await Promise.all([
+    octokit.rest.pulls.get({ owner, repo, pull_number: prNumber }),
+    octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: prNumber,
+      mediaType: { format: "diff" },
+    }),
+  ]);
 
   return {
-    diff: diff as unknown as string,
-    title: pr.title,
-    description: pr.body,
+    diff: diffResponse.data as unknown as string,
+    title: prResponse.data.title,
+    description: prResponse.data.body,
   };
 }
 
@@ -232,10 +227,11 @@ export async function postReviewComment(
 ) {
   const octokit = new Octokit({ auth: token });
 
-  await octokit.rest.issues.createComment({
+  await octokit.rest.pulls.createReview({
     owner,
     repo,
-    issue_number: prNumber,
-    body: `## AI Code Review\n\n${review}\n\n---\n*Powered By CodeNakama*`,
+    pull_number: prNumber,
+    body: `## CodeNakama Review\n\n${review}`,
+    event: "COMMENT",
   });
 }

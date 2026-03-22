@@ -1,26 +1,21 @@
 "use client";
 
 import { ActivityCalendar } from "react-activity-calendar";
-import { useQuery } from "@tanstack/react-query";
-import { getContributionStats } from "@/module/dashboard";
 
-const ContributionGraph = () => {
-  const { data, isLoading } = useQuery({
-    queryKey: ["contribution-graph"],
-    queryFn: async () => await getContributionStats(),
-    staleTime: 1000 * 60 * 5,
-  });
+interface ContributionDay {
+  date: string;
+  count: number;
+  level: number;
+}
 
-  if (isLoading) {
-    return (
-      <div className="w-full flex flex-col items-center justify-center p-8">
-        <div className="animate-pulse text-muted-foreground">
-          Loading contribution data...
-        </div>
-      </div>
-    );
-  }
+interface ContributionGraphProps {
+  data?: {
+    totalContributions: number;
+    contributions: ContributionDay[];
+  } | null;
+}
 
+const ContributionGraph = ({ data }: ContributionGraphProps) => {
   if (!data || !data.contributions.length) {
     return (
       <div className="w-full flex flex-col items-center justify-center p-8">
@@ -49,6 +44,7 @@ const ContributionGraph = () => {
             fontSize={14}
             showWeekdayLabels
             showMonthLabels
+            colorScheme="dark"
             theme={{
               dark: ["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"],
             }}

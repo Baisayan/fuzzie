@@ -1,21 +1,8 @@
-"use client";
+import { getSettingsPageData } from "@/module/settings";
+import SettingsPageClient from "@/module/settings/settings-client";
 
-import { ProfileForm } from "@/module/settings/profile-form";
-import { RepositoryList } from "@/module/settings/repo-list";
+export default async function Page () {
+  const data = await getSettingsPageData();
 
-const SettingsPageClient = () => {
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your account settings and connected repositories.
-        </p>
-      </div>
-      <ProfileForm /> 
-      <RepositoryList /> 
-    </div>
-  );
+  return <SettingsPageClient initialData={data} />;
 };
-
-export default SettingsPageClient;

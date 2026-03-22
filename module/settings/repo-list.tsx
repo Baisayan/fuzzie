@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ExternalLink, Trash2, AlertTriangle } from "lucide-react";
 import {
@@ -22,44 +22,20 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useState } from "react";
 import {
-  getConnectedRepositories,
   disconnectRepository,
   disconnectAllRepositories,
+  getSettingsPageData,
 } from "./";
 
-export function RepositoryList() {
-  const queryClient = useQueryClient();
-  const [disconnectAllOpen, setDisconnectAllOpen] = useState(false);
+type Repo = NonNullable<
+  Awaited<ReturnType<typeof getSettingsPageData>>["repositories"]
+>[number];
 
-  const { data: repositories, isLoading } = useQuery({
-    queryKey: ["connected-repositories"],
-    queryFn: async () => await getConnectedRepositories(),
-    staleTime: 2 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
+export function RepositoryList({ initialRepos }: { initialRepos: Repo[] }) {
   const disconnectMutation = useMutation({
-    mutationFn: async (repositoryId: string) => {
-      return await disconnectRepository(repositoryId);
-    },
-    onSuccess: (result) => {
-      if (result?.success) {
-        queryClient.invalidateQueries({
-          queryKey: ["connected-repositories"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["dashboard-stats"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["reviews"],
-        });
-        toast.success("Repository disconnected successfully");
-      } else {
-        toast.error(result?.error || "Failed to disconnect repository");
-      }
-    },
+    mutationFn: disconnectRepository,
+    onSuccess: () => toast.success("Repository disconnected."),
     onError: (error) => {
       console.error("Failed to disconnect repository:", error);
       toast.error("Failed to disconnect repository");
@@ -67,47 +43,13 @@ export function RepositoryList() {
   });
 
   const disconnectAllMutation = useMutation({
-    mutationFn: async () => {
-      return await disconnectAllRepositories();
-    },
-    onSuccess: (result) => {
-      if (result?.success) {
-        queryClient.invalidateQueries({
-          queryKey: ["connected-repositories"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["dashboard-stats"],
-        });
-        toast.success(`Disconnected ${result?.count || 0} repositories`);
-        setDisconnectAllOpen(false);
-      } else {
-        toast.error(result?.error || "Failed to disconnect all repositories");
-      }
-    },
+    mutationFn: disconnectAllRepositories,
+    onSuccess: (res) => toast.success(`Disconnected ${res.count} repos.`),
     onError: (error) => {
-      console.error("Failed to disconnect all repositories:", error);
-      toast.error("Failed to disconnect all repositories");
+      console.error("Failed to disconnect all repos:", error);
+      toast.error("Failed to disconnect all repos");
     },
   });
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Connected Repositories</CardTitle>
-          <CardDescription>
-            Manage your connected GitHub repositories
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="animate-pulse space-y-4">
-            <div className="h-10 bg-muted rounded" />
-            <div className="h-10 bg-muted rounded" />
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card>
@@ -119,17 +61,16 @@ export function RepositoryList() {
               Manage your connected GitHub repositories
             </CardDescription>
           </div>
-          {repositories && repositories.length > 0 && (
-            <AlertDialog
-              open={disconnectAllOpen}
-              onOpenChange={setDisconnectAllOpen}
-            >
+
+          {initialRepos.length > 0 && (
+            <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant={"destructive"} size={"sm"}>
+                <Button variant="destructive" size="sm">
                   <Trash2 className="size-4 mr-2" />
                   Disconnect All
                 </Button>
               </AlertDialogTrigger>
+
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2">
@@ -137,19 +78,20 @@ export function RepositoryList() {
                     Disconnect All Repositories?
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will disconnect all {repositories.length} repositories
+                    This will disconnect all {initialRepos.length} repositories
                     and delete all associated AI reviews. This action cannot be
                     undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
+
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={() => disconnectAllMutation.mutate()}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90" //
                     disabled={disconnectAllMutation.isPending}
                   >
-                    {disconnectAllMutation.isPending
+                    {disconnectAllMutation.isPending //
                       ? "Disconnecting..."
                       : "Disconnect All"}
                   </AlertDialogAction>
@@ -161,7 +103,7 @@ export function RepositoryList() {
       </CardHeader>
 
       <CardContent>
-        {!repositories || repositories.length === 0 ? (
+        {!initialRepos || initialRepos.length === 0 ? (
           <div className="text-muted-foreground text-center py-4">
             <p>No repositories connected.</p>
             <p className="text-sm mt-2">
@@ -171,7 +113,7 @@ export function RepositoryList() {
           </div>
         ) : (
           <div className="space-y-4">
-            {repositories.map((repo) => (
+            {initialRepos.map((repo) => (
               <div
                 key={repo.id}
                 className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -185,7 +127,7 @@ export function RepositoryList() {
                       rel="noopener noreferrer"
                       className="text-muted-foreground hover:text-foreground"
                     >
-                      <ExternalLink className="h-4 w-4" />
+                      <ExternalLink className="size-4" />
                     </a>
                   </div>
                 </div>
@@ -197,7 +139,7 @@ export function RepositoryList() {
                       size="sm"
                       className="ml-4 text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>

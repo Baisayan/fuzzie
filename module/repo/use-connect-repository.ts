@@ -16,15 +16,13 @@ export const useConnectRepository = () => {
       owner: string;
       repo: string;
       githubId: number;
-    }) => {
-      return await connectRepository(owner, repo, githubId);
-    },
+    }) => connectRepository(owner, repo, githubId),
     onSuccess: () => {
       toast.success("Repository connected successfully!");
       queryClient.invalidateQueries({ queryKey: ["repositories"] });
     },
     onError: (error) => {
-      console.error(error);
+      console.error("Connection error:", error);
       toast.error("Failed to connect repository");
     },
   });

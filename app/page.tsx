@@ -27,9 +27,9 @@ export default function Hero() {
 
         <div className="flex items-center gap-4">
           <Button asChild size="lg">
-            <Link href="/dashboard" className="font-semibold">
+            <Link href="/dashboard" className="font-semibo">
               <Github className="size-4" />
-              Get Started
+              Get Started for Free
             </Link>
           </Button>
           <Button variant="outline" size="lg">

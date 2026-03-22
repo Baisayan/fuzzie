@@ -10,23 +10,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ExternalLink, Star, Search } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { ExternalLink, Star, Search, Loader2 } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRepositories } from "@/module/repo/use-repos";
 import { RepositoryListSkeleton } from "@/module/repo/repository-skeleton";
 import { useConnectRepository } from "@/module/repo/use-connect-repository";
+import { fetchRepositories } from "@/module/repo";
 
-interface Repository {
-  id: number;
-  name: string;
-  full_name: string;
-  description: string | null;
-  html_url: string;
-  stargazers_count: number;
-  language: string | null;
-  topics: string[];
-  isConnected?: boolean;
-}
+type Repo = Awaited<ReturnType<typeof fetchRepositories>>[number];
 
 const RepositoryPageClient = () => {
   const {
@@ -40,42 +31,41 @@ const RepositoryPageClient = () => {
 
   const { mutate: connectRepo } = useConnectRepository();
   const [searchQuery, setSearchQuery] = useState("");
-  const observerTarget = useRef<HTMLDivElement>(null);
-
   const [localConnectingId, setLocalConnectingId] = useState<number | null>(
     null,
   );
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const target = observerTarget.current;
+    if (!target || !hasNextPage) return;
+
     const observer = new IntersectionObserver(
-      (entries: any) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) {
           fetchNextPage();
         }
       },
-      { threshold: 0.1 },
+      { threshold: 0.5 },
     );
 
-    const currentTarget = observerTarget.current;
-    if (currentTarget) {
-      observer.observe(currentTarget);
-    }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget);
-      }
-    };
+    observer.observe(target);
+    return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const allRepositories = data?.pages.flatMap((page) => page) || [];
-  const filteredRepositories = allRepositories.filter(
-    (repo: Repository) =>
-      repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      repo.full_name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  const filteredRepositories = useMemo(() => {
+    const allRepos = data?.pages.flat() || [];
+    if (!searchQuery) return allRepos;
 
-  const handleConnect = (repo: Repository) => {
+    const query = searchQuery.toLowerCase();
+    return allRepos.filter(
+      (repo) =>
+        repo.name.toLowerCase().includes(query) ||
+        repo.full_name.toLowerCase().includes(query),
+    );
+  }, [data, searchQuery]);
+
+  const handleConnect = (repo: Repo) => {
     setLocalConnectingId(repo.id);
     connectRepo(
       {
@@ -137,7 +127,7 @@ const RepositoryPageClient = () => {
       </div>
 
       <div className="grid gap-4">
-        {filteredRepositories.map((repo: any) => (
+        {filteredRepositories.map((repo) => (
           <Card key={repo.id}>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -151,7 +141,9 @@ const RepositoryPageClient = () => {
                       <Badge variant={"secondary"}>Connected</Badge>
                     )}
                   </div>
-                  <CardDescription>{repo.description}</CardDescription>
+                  <CardDescription>
+                    {repo.description || "No description provided."}
+                  </CardDescription>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="icon" asChild>
@@ -168,11 +160,13 @@ const RepositoryPageClient = () => {
                     disabled={localConnectingId === repo.id || repo.isConnected}
                     variant={repo.isConnected ? "ghost" : "default"}
                   >
-                    {localConnectingId === repo.id
-                      ? "Connecting..."
-                      : repo.isConnected
-                        ? "Connected"
-                        : "Connect"}
+                    {localConnectingId === repo.id ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : repo.isConnected ? (
+                      "Connected"
+                    ) : (
+                      "Connect"
+                    )}
                   </Button>
                 </div>
               </div>
@@ -181,13 +175,13 @@ const RepositoryPageClient = () => {
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
                   <Star className="size-4 text-primary" fill="#ffe0c2" />
-                  <p>{repo.stargazers_count}</p>
+                  {repo.stargazers_count}
                 </div>
-                {repo.topics.map((topic: string) => (
-                  <Badge key={topic} variant="outline">
-                    {topic}
-                  </Badge>
-                ))}
+                <div className="flex gap-2">
+                  {repo.topics?.slice(0, 3).map((topic) => (
+                    <span key={topic}>#{topic}</span>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -195,12 +189,13 @@ const RepositoryPageClient = () => {
       </div>
 
       <div ref={observerTarget} className="py-4">
-        {isFetchingNextPage && <RepositoryListSkeleton />}
-        {!hasNextPage && allRepositories.length > 0 && (
+        {isFetchingNextPage ? (
+          <RepositoryListSkeleton />
+        ) : !hasNextPage && filteredRepositories.length > 0 ? (
           <p className="text-center text-muted-foreground">
             That&apos;s all the repositories you have!
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   );

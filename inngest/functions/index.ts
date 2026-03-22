@@ -4,7 +4,7 @@ import { getRepoFileContents } from "@/module/github";
 import { indexCodebase } from "@/module/ai/rag";
 
 export const indexRepo = inngest.createFunction(
-  { id: "index-repo" },
+  { id: "index-repo", concurrency: 2 },
   { event: "repository.connected" },
   async ({ event, step }) => {
     const { owner, repo, userId } = event.data;
@@ -21,13 +21,15 @@ export const indexRepo = inngest.createFunction(
         throw new Error("No GitHub access token found");
       }
 
-      const files = await getRepoFileContents(account.accessToken, owner, repo);
-
+      return await getRepoFileContents(account.accessToken, owner, repo);
+    });
+    
+    await step.run("index-to-pinecone", async () => {
       await indexCodebase(`${owner}/${repo}`, files);
 
       return files.length;
     });
 
-    return { success: true, indexedFiles: files };
+    return { success: true, indexedFiles: files.length };
   },
 );

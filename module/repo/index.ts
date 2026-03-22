@@ -1,34 +1,27 @@
 "use server";
 
 import prisma from "@/lib/db";
-import { auth } from "@/lib/auth";
-import { createWebhook, getRepositories } from "@/module/github";
-import { headers } from "next/headers";
+import {
+  getAuthenticatedUser,
+  createWebhook,
+  getRepositories,
+} from "@/module/github";
 import { inngest } from "@/inngest/client";
 
 export const fetchRepositories = async (
   page: number = 1,
   perPage: number = 10,
 ) => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
+  const { session } = await getAuthenticatedUser();
 
-  if (!session) {
-    throw new Error("Unauthorized");
-  }
-
-  const githubRepos = await getRepositories(page, perPage);
-
-  const dbRepos = await prisma.repository.findMany({
-    where: {
-      userId: session.user.id,
-    },
-  });
+  const [githubRepos, dbRepos] = await Promise.all([
+    getRepositories(page, perPage),
+    prisma.repository.findMany({ where: { userId: session.user.id } }),
+  ]);
 
   const connectedRepoIds = new Set(dbRepos.map((repo) => repo.githubId));
 
-  return githubRepos.map((repo: any) => ({
+  return githubRepos.map((repo) => ({
     ...repo,
     isConnected: connectedRepoIds.has(BigInt(repo.id)),
   }));
@@ -39,41 +32,30 @@ export const connectRepository = async (
   repo: string,
   githubId: number,
 ) => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!session) {
-    throw new Error("Unauthorized");
-  }
+  const { session } = await getAuthenticatedUser();
 
   const webhook = await createWebhook(owner, repo);
+  if (!webhook) throw new Error("Could not establish webhook");
 
-  if (webhook) {
-    await prisma.repository.create({
-      data: {
-        githubId: BigInt(githubId),
-        name: repo,
-        owner,
-        fullName: `${owner}/${repo}`,
-        url: `https://github.com/${owner}/${repo}`,
-        userId: session.user.id,
-      },
+  const newRepo = await prisma.repository.create({
+    data: {
+      githubId: BigInt(githubId),
+      name: repo,
+      owner,
+      fullName: `${owner}/${repo}`,
+      url: `https://github.com/${owner}/${repo}`,
+      userId: session.user.id,
+    },
+  });
+
+  try {
+    await inngest.send({
+      name: "repository.connected",
+      data: { owner, repo, userId: session.user.id },
     });
-
-    try {
-      await inngest.send({
-        name: "repository.connected",
-        data: {
-          owner,
-          repo,
-          userId: session.user.id,
-        },
-      });
-    } catch (error) {
-      console.error("Failed to trigger repository indexing:", error);
-    }
+  } catch (error) {
+    console.error("Failed to trigger repository indexing:", error);
   }
 
-  return webhook;
+  return { success: true, id: newRepo.id };
 };

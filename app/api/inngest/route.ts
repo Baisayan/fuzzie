@@ -1,5 +1,5 @@
 import { serve } from "inngest/next";
-import { inngest } from "../../../inngest/client";
+import { inngest } from "@/inngest/client";
 import { indexRepo } from "@/inngest/functions";
 import { generateReview } from "@/inngest/functions/review";
 

@@ -7,7 +7,9 @@ export async function generateEmbedding(text: string) {
     model: google.embedding("gemini-embedding-001"),
     value: text,
     providerOptions: {
-      google: { outputDimensionality: 768 } satisfies GoogleEmbeddingModelOptions,
+      google: {
+        outputDimensionality: 768,
+      } satisfies GoogleEmbeddingModelOptions,
     },
   });
 
@@ -21,22 +23,22 @@ export async function indexCodebase(
   const vectors = [];
 
   for (const file of files) {
-    const content = `File: ${file.path}\n\n${file.content}`;
-    const truncatedContent = content.slice(0, 8000);
+    if (!file.content?.trim()) continue;
+    const content = `File: ${file.path}\n\n${file.content}`.slice(0, 8000);
 
     try {
-      const embedding = await generateEmbedding(truncatedContent);
+      const embedding = await generateEmbedding(content);
       vectors.push({
         id: `${repoId}-${file.path.replace(/\//g, "_")}`,
         values: embedding,
         metadata: {
           repoId,
           filePath: file.path,
-          content: truncatedContent,
+          content: content,
         },
       });
     } catch (error) {
-      console.error(`Failed to embed ${file.path}:`, error);
+      throw new Error(`Failed to embed ${file.path}: ${error}`);
     }
   }
 

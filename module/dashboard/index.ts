@@ -1,213 +1,141 @@
-"use server";
-
-import { fetchUserContribution, getGithubToken } from "@/module/github";
-import { auth } from "@/lib/auth";
+import { fetchUserContribution, getAuthenticatedUser } from "@/module/github";
 import prisma from "@/lib/db";
-import { Octokit } from "octokit";
-import { headers } from "next/headers";
+
+interface ContributionDay {
+  date: string;
+  contributionCount: number;
+}
+
+interface ContributionWeek {
+  contributionDays: ContributionDay[];
+}
+
+interface ContributionCalendar {
+  totalContributions: number;
+  weeks: ContributionWeek[];
+}
+
+interface GitHubPR {
+  created_at: string;
+}
+
+interface DbReview {
+  createdAt: Date;
+}
+
+interface MonthlyStats {
+  commits: number;
+  prs: number;
+  reviews: number;
+}
 
 export async function getDashboardStats() {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
+    const { session, token, username, octokit } = await getAuthenticatedUser();
 
-    if (!session) {
-      throw new Error("Unauthorized");
-    }
-
-    const token = await getGithubToken();
-    const octokit = new Octokit({ auth: token });
-    const { data: user } = await octokit.rest.users.getAuthenticated();
-
-    const [totalRepos, calender, prs, totalReviews] = await Promise.all([
-      prisma.repository.count({
-        where: {
-          userId: session.user.id,
-        },
-      }),
-      fetchUserContribution(token, user.login),
-      octokit.rest.search.issuesAndPullRequests({
-        q: `author:${user.login} type:pr`,
-        per_page: 1,
-      }),
-      prisma.review.count({
-        where: {
-          repository: {
-            userId: session.user.id,
+    const [totalRepos, calendar, prs, totalReviews, dbReviews] =
+      await Promise.all([
+        prisma.repository.count({ where: { userId: session.user.id } }),
+        fetchUserContribution(token, username),
+        octokit.rest.search.issuesAndPullRequests({
+          q: `author:${username} type:pr`,
+          per_page: 100,
+        }),
+        prisma.review.count({
+          where: { repository: { userId: session.user.id } },
+        }),
+        prisma.review.findMany({
+          where: {
+            repository: { userId: session.user.id },
+            createdAt: {
+              gte: new Date(new Date().setMonth(new Date().getMonth() - 6)),
+            },
           },
-        },
-      }),
-    ]);
+          select: { createdAt: true },
+        }),
+      ]);
 
-    const totalCommits = calender?.totalContributions || 0;
-    const totalPrs = prs.data.total_count || 0;
-
-    return {
-      totalCommits,
-      totalPrs,
+    const stats = {
+      totalCommits: calendar?.totalContributions || 0,
+      totalPrs: prs.data.total_count || 0,
       totalReviews,
       totalRepos,
     };
-  } catch (error) {
-    console.error("Error fetching dashboard stats:", error);
-    return {
-      totalCommits: 0,
-      totalPrs: 0,
-      totalReviews: 0,
-      totalRepos: 0,
-    };
-  }
-}
 
-export async function getMonthlyActivity() {
-  try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session) {
-      throw new Error("Unauthorized");
-    }
-
-    const token = await getGithubToken();
-    const octokit = new Octokit({ auth: token });
-    const { data: user } = await octokit.rest.users.getAuthenticated();
-    const calender = await fetchUserContribution(token, user.login);
-
-    if (!calender) {
-      return [];
-    }
-
-    const monthlyData: {
-      [key: string]: {
-        commits: number;
-        prs: number;
-        reviews: number;
-      };
-    } = {};
-
-    const monthNames = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
-
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthKey = monthNames[date.getMonth()];
-      monthlyData[monthKey] = {
-        commits: 0,
-        prs: 0,
-        reviews: 0,
-      };
-    }
-
-    calender.weeks.forEach((week: any) => {
-      week.contributionDays.forEach((day: any) => {
-        const date = new Date(day.date);
-        const monthKey = monthNames[date.getMonth()];
-        if (monthlyData[monthKey]) {
-          monthlyData[monthKey].commits += day.contributionCount;
-        }
-      });
-    });
-
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-    const [reviews, { data: prs }] = await Promise.all([
-      prisma.review.findMany({
-        where: {
-          repository: {
-            userId: session.user.id,
-          },
-          createdAt: {
-            gte: sixMonthsAgo,
-          },
-        },
-        select: {
-          createdAt: true,
-        },
-      }),
-      octokit.rest.search.issuesAndPullRequests({
-        q: `author:${user.login} type:pr created:>${
-          sixMonthsAgo.toISOString().split("T")[0]
-        }`,
-        per_page: 100,
-      }),
-    ]);
-
-    reviews.forEach((review) => {
-      const monthKey = monthNames[review.createdAt.getMonth()];
-      if (monthlyData[monthKey]) {
-        monthlyData[monthKey].reviews += 1;
-      }
-    });
-
-    prs.items.forEach((pr: any) => {
-      const date = new Date(pr.created_at);
-      const monthKey = monthNames[date.getMonth()];
-      if (monthlyData[monthKey]) {
-        monthlyData[monthKey].prs += 1;
-      }
-    });
-
-    return Object.keys(monthlyData).map((name) => ({
-      name,
-      ...monthlyData[name],
-    }));
-  } catch (error) {
-    console.error("Error fetching monthly activity:", error);
-    return [];
-  }
-}
-
-export async function getContributionStats() {
-  try {
-    const session = await auth.api.getSession({
-      headers: await headers(),
-    });
-
-    if (!session?.user) {
-      throw new Error("Unauthorized");
-    }
-
-    const token = await getGithubToken();
-    const octokit = new Octokit({ auth: token });
-
-    const { data: user } = await octokit.rest.users.getAuthenticated();
-    const username = user.login;
-    const calender = await fetchUserContribution(token, username);
-
-    if (!calender) {
-      return null;
-    }
-
-    const contributions = calender.weeks.flatMap((week: any) =>
-      week.contributionDays.map((day: any) => ({
-        date: day.date,
-        count: day.contributionCount,
-        level: Math.min(4, Math.floor(day.contributionCount / 3)),
-      })),
+    const monthlyActivity = processMonthlyData(
+      calendar,
+      prs.data.items,
+      dbReviews,
     );
+    const contributions = processContributionData(calendar);
 
-    return {
-      contributions,
-      totalContributions: calender.totalContributions,
-    };
+    return { stats, monthlyActivity, contributions };
   } catch (error) {
-    console.error("Error fetching contribution stats:", error);
+    console.error("Error fetching dashboard data:", error);
     return null;
   }
+}
+
+function processMonthlyData(
+  calendar: ContributionCalendar | null | undefined,
+  prs: GitHubPR[],
+  reviews: DbReview[],
+) {
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const monthlyData: Record<string, MonthlyStats> = {};
+  const now = new Date();
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthlyData[monthNames[d.getMonth()]] = { commits: 0, prs: 0, reviews: 0 };
+  }
+
+  calendar?.weeks.forEach((week) =>
+    week.contributionDays.forEach((day: any) => {
+      const monthKey = monthNames[new Date(day.date).getMonth()];
+      if (monthlyData[monthKey]) monthlyData[monthKey].commits += day.contributionCount;
+    }),
+  );
+
+  prs.forEach((pr: any) => {
+    const m = monthNames[new Date(pr.created_at).getMonth()];
+    if (monthlyData[m]) monthlyData[m].prs += 1;
+  });
+
+  reviews.forEach((r: any) => {
+    const m = monthNames[r.createdAt.getMonth()];
+    if (monthlyData[m]) monthlyData[m].reviews += 1;
+  });
+
+  return Object.keys(monthlyData).map((name) => ({
+    name,
+    ...monthlyData[name],
+  }));
+}
+
+function processContributionData(calendar: ContributionCalendar | null | undefined) {
+  if (!calendar) return null;
+  return {
+    totalContributions: calendar.totalContributions,
+    contributions: calendar.weeks.flatMap((w: any) =>
+      w.contributionDays.map((d: any) => ({
+        date: d.date,
+        count: d.contributionCount,
+        level: Math.min(4, Math.floor(d.contributionCount / 3)),
+      })),
+    ),
+  };
 }

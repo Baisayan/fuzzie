@@ -2,47 +2,37 @@
 
 import { inngest } from "@/inngest/client";
 import prisma from "@/lib/db";
-import { getPullRequestDiff } from "../github";
 
 export async function reviewPullRequest(
   owner: string,
   repo: string,
   prNumber: number,
 ) {
+  let repositoryId: string | null = null;
+
   try {
-    const respository = await prisma.repository.findFirst({
-      where: {
-        owner,
-        name: repo,
-      },
+    const repository = await prisma.repository.findFirst({
+      where: { owner, name: repo },
       include: {
         user: {
           include: {
             accounts: {
-              where: {
-                providerId: "github",
-              },
+              where: { providerId: "github" },
             },
           },
         },
       },
     });
 
-    if (!respository) {
-      throw new Error(
-        `Repository ${owner}/${repo} not found in database. Please reconnect the repository.`,
-      );
-    }
+    if (!repository)
+      throw new Error(`Repo ${owner}/${repo} not found in database.`);
 
-    const githubAccount = respository.user.accounts[0];
+    repositoryId = repository.id;
+    const githubAccount = repository.user.accounts[0];
 
     if (!githubAccount?.accessToken) {
       throw new Error(`No GitHub access token found for repository owner.`);
     }
-
-    const token = githubAccount.accessToken;
-
-    const { title } = await getPullRequestDiff(token, owner, repo, prNumber);
 
     await inngest.send({
       name: "pr.review.requested",
@@ -50,21 +40,22 @@ export async function reviewPullRequest(
         owner,
         repo,
         prNumber,
-        userId: respository.user.id,
+        userId: repository.user.id,
       },
     });
 
     return { success: true, message: "Review Queued" };
   } catch (error) {
-    try {
-      const repository = await prisma.repository.findFirst({
-        where: { owner, name: repo },
-      });
+    console.error(
+      `Review request failed:`,
+      error instanceof Error ? error.message : "Unknown Error",
+    );
 
-      if (repository) {
-        await prisma.review.create({
+    if (repositoryId) {
+      await prisma.review
+        .create({
           data: {
-            repositoryId: repository.id,
+            repositoryId,
             prNumber,
             prTitle: "Failed to fetch PR",
             prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
@@ -73,10 +64,12 @@ export async function reviewPullRequest(
             }`,
             status: "failed",
           },
-        });
-      }
-    } catch (dbError) {
-      console.error("Failed to save error to database:", dbError);
+        })
+        .catch((e) => console.error("Could not save failure record:", e));
     }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown Error",
+    };
   }
 }
