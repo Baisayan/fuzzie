@@ -44,12 +44,12 @@ export const generateReview = inngest.createFunction(
 
     // generates the ai review based on pr diff n context from codebase
     const review = await step.run("generate-ai-review", async () => {
-      const prompt = `You are an expert code reviewer. Analyze the following pull request and provide a detailed, constructive code review.
+      const prompt = `You are an expert code reviewer. Analyze the following pull request:
 
 PR Title: ${prData.title}
 PR Description: ${prData.description || "No description provided"}
 
-Context from Codebase:
+Relevant Code Context
 ${context.join("\n\n")}
 
 Code Changes:
@@ -57,23 +57,29 @@ Code Changes:
 ${prData.diff}
 \`\`\`
 
-Please provide:
-1. **Walkthrough**: A file-by-file explanation of the changes.
-2. **Sequence Diagram**: A Mermaid JS sequence diagram visualizing the flow of the changes (if applicable). Use \`\`\`mermaid ... \`\`\` block. 
-   **STRICT MERMAID RULES**:
-   - Start with \`sequenceDiagram\`.
-   - **MUST** explicitly declare all participants at the top using \`participant Alias as Name\`.
-   - **DO NOT** use special characters like parentheses \`()\`, slashes \`/\`, dots \`.\`, brackets \`[]\`, or braces \`{}\` in participant names or message labels. Use only alphanumeric characters and spaces.
-   - Example of a GOOD label: \`Process Payment Request\`
-   - Example of a BAD label: \`processPayment(data)\`
-   - Keep the diagram focused on the core logic changes.
-   - If a diagram is not helpful for these changes, omit this section entirely.
-3. **Summary**: Brief overview.
-4. **Strengths**: What's done well.
-5. **Issues**: Bugs, security concerns, code smells.
-6. **Suggestions**: Specific code improvements.
+Analyze the code specifically for:
+- Logic and Correctness
+- Security Vulnerabilities or issues
+- Performance Bottlenecks 
+- Maintainability and Code Quality
 
-Format your response in markdown.`;
+# Output Format (Strict Markdown)
+## Walkthrough
+[Explain the changes file-by-file in 1-2 sentences each]
+
+## Summary
+[Provide a high-level overview of the impact of these changes]
+
+## Strengths
+[List 2-3 specific things the developer did well in this PR]
+
+## Issues & Improvements
+[List critical bugs, security risks, or code smells. Use code blocks for suggested fixes.]
+
+## Suggestions
+[Non-critical ideas for better readability or future-proofing.]
+
+Keep the response concise, practical, and grounded in the provided code.`;
 
       const { text } = await generateText({
         model: google("gemini-2.5-flash"),
